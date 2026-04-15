@@ -7,6 +7,14 @@ export class UsersService {
   private users: User[] = [];
 
   create(createUserDto: CreateUserDto) {
+    const exists = this.users.find(
+      user => user.correo === createUserDto.correo
+    );
+
+    if (exists) {
+      throw new Error('El usuario ya existe');
+    }
+
     this.users.push(createUserDto);
     return createUserDto;
   }
@@ -16,6 +24,12 @@ export class UsersService {
   }
 
   findByCorreo(correo: string) {
-    return this.users.find(user => user.correo === correo);
+    const user = this.users.find(
+      user =>
+        user.correo.trim().toLowerCase() ===
+        correo.trim().toLowerCase()
+    );
+
+    return user || null;
   }
 }
