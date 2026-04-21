@@ -7,22 +7,20 @@ import { RolesGuard } from './guards/roles.guard';
 
 @Controller('users')
 export class UsersController {
-  constructor(private usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  create(@Body() createUserDto: CreateUserDto) {
+  async create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
   @Get()
-  findAll() {
+  async findAll() {
     return this.usersService.findAll();
   }
 
-  @Get(':correo')
-  findByCorreo(@Param('correo') correo: string) {
-    return this.usersService.findByCorreo(correo);
+  @Get(':email')
+  async findByEmail(@Param('email') email: string) {
+    return this.usersService.findByEmail(email);
   }
 }
