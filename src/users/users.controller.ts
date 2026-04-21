@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Patch } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -24,5 +24,14 @@ export class UsersController {
   @Get(':correo')
   findByCorreo(@Param('correo') correo: string) {
     return this.usersService.findByCorreo(correo);
+  }
+
+  @Post(':documento/vehiculo')
+  addVehiculo(@Param('documento') documento: string, @Body() vehiculoDto: any) {
+    return this.usersService.addVehiculo(documento, vehiculoDto);
+  }
+
+  @Patch(':documento') update(@Param('documento') documento: string,@Body() updateDto: any) {
+    return this.usersService.update(documento, updateDto);
   }
 }
