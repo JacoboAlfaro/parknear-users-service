@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from 'src/database/drizzle.service';
-import { EstadoUsuario, conductores, controladores, usuarios } from 'src/database/schema';
+import {
+  EstadoUsuario,
+  conductores,
+  controladores,
+  usuarios,
+  vehiculos,
+} from 'src/database/schema';
 
 export type TipoUsuario = 'conductor' | 'controlador' | null;
 
@@ -22,6 +27,13 @@ export interface UserRecord {
   tipo_usuario: TipoUsuario;
 }
 
+export interface VehiculoRecord {
+  placa: string;
+  id_conductor: string | null;
+  marca: string | null;
+  color: string | null;
+}
+
 interface CreateUserInput {
   documento_identidad: string;
   primer_nombre: string;
@@ -33,6 +45,18 @@ interface CreateUserInput {
   celular: string;
   estado?: EstadoUsuario;
   tipo_usuario?: Exclude<TipoUsuario, null>;
+}
+
+export interface UpdateUsuarioFields {
+  primer_nombre?: string;
+  segundo_nombre?: string | null;
+  primer_apellido?: string;
+  segundo_apellido?: string | null;
+  email?: string;
+  contrasena?: string;
+  celular?: string;
+  estado?: EstadoUsuario;
+  tipo_usuario?: 'conductor' | 'controlador';
 }
 
 @Injectable()
@@ -47,16 +71,16 @@ export class UsersRepository {
         const [usuario] = await tx
           .insert(usuarios)
           .values({
-          documento_identidad: input.documento_identidad,
-          primer_nombre: input.primer_nombre,
-          segundo_nombre: input.segundo_nombre ?? null,
-          primer_apellido: input.primer_apellido,
-          segundo_apellido: input.segundo_apellido ?? null,
-          email: input.email,
-          contrasena: input.contrasena,
-          celular: input.celular,
-          estado,
-        })
+            documento_identidad: input.documento_identidad,
+            primer_nombre: input.primer_nombre,
+            segundo_nombre: input.segundo_nombre ?? null,
+            primer_apellido: input.primer_apellido,
+            segundo_apellido: input.segundo_apellido ?? null,
+            email: input.email,
+            contrasena: input.contrasena,
+            celular: input.celular,
+            estado,
+          })
           .returning();
 
         if (!usuario) {
@@ -83,7 +107,6 @@ export class UsersRepository {
         };
       });
     } catch (error: unknown) {
-      // Check if it's a unique constraint violation
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('El usuario ya existe');
       }
@@ -155,8 +178,163 @@ export class UsersRepository {
     };
   }
 
+  async findByDocumento(documento: string): Promise<UserRecord | null> {
+    const [usuario] = await this.drizzleService.db
+      .select()
+      .from(usuarios)
+      .where(eq(usuarios.documento_identidad, documento));
+
+    if (!usuario) {
+      return null;
+    }
+
+    const tipo_usuario = await this.resolveTipoUsuario(usuario.id);
+
+    return {
+      ...usuario,
+      tipo_usuario,
+    };
+  }
+
+  async insertVehiculoForConductor(
+    conductorId: string,
+    input: { placa: string; marca?: string | null; color?: string | null },
+  ): Promise<VehiculoRecord> {
+    const placa = input.placa.trim().slice(0, 10);
+    const marca =
+      input.marca != null && String(input.marca).trim() !== ''
+        ? String(input.marca).trim().slice(0, 32)
+        : null;
+    const color =
+      input.color != null && String(input.color).trim() !== ''
+        ? String(input.color).trim().slice(0, 32)
+        : null;
+
+    try {
+      const [row] = await this.drizzleService.db
+        .insert(vehiculos)
+        .values({
+          placa,
+          id_conductor: conductorId,
+          marca,
+          color,
+        })
+        .returning({
+          placa: vehiculos.placa,
+          id_conductor: vehiculos.id_conductor,
+          marca: vehiculos.marca,
+          color: vehiculos.color,
+        });
+
+      if (!row) {
+        throw new Error('No se pudo registrar el vehículo');
+      }
+
+      return row;
+    } catch (error: unknown) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException('Ya existe un vehículo con esa placa');
+      }
+      throw error;
+    }
+  }
+
+  async findVehiculosByConductorId(
+    conductorId: string,
+  ): Promise<VehiculoRecord[]> {
+    return this.drizzleService.db
+      .select({
+        placa: vehiculos.placa,
+        id_conductor: vehiculos.id_conductor,
+        marca: vehiculos.marca,
+        color: vehiculos.color,
+      })
+      .from(vehiculos)
+      .where(eq(vehiculos.id_conductor, conductorId));
+  }
+
+  async updateByDocumento(
+    documento: string,
+    fields: UpdateUsuarioFields,
+  ): Promise<UserRecord | null> {
+    const existing = await this.findByDocumento(documento);
+    if (!existing) {
+      return null;
+    }
+
+    const { tipo_usuario, ...usuarioCols } = fields;
+
+    const usuarioUpdate = Object.fromEntries(
+      Object.entries(usuarioCols).filter(([, v]) => v !== undefined),
+    ) as Record<string, unknown>;
+
+    try {
+      await this.drizzleService.db.transaction(async (tx) => {
+        if (Object.keys(usuarioUpdate).length > 0) {
+          await tx
+            .update(usuarios)
+            .set({
+              ...usuarioUpdate,
+              fecha_actualizacion: new Date(),
+            } as typeof usuarios.$inferInsert)
+            .where(eq(usuarios.documento_identidad, documento));
+        }
+
+        const [fresh] = await tx
+          .select()
+          .from(usuarios)
+          .where(eq(usuarios.documento_identidad, documento));
+
+        if (!fresh) {
+          return;
+        }
+
+        const currentTipo = await this.resolveTipoUsuarioWithDb(
+          tx as unknown as typeof this.drizzleService.db,
+          fresh.id,
+        );
+
+        if (tipo_usuario !== undefined && tipo_usuario !== currentTipo) {
+          if (currentTipo !== null) {
+            throw new ConflictException('El tipo de usuario ya está asignado');
+          }
+          if (tipo_usuario === 'conductor') {
+            await tx.insert(conductores).values({
+              id: fresh.id,
+              estado: fresh.estado,
+            });
+          } else {
+            await tx.insert(controladores).values({
+              id: fresh.id,
+              estado: fresh.estado,
+            });
+          }
+        }
+      });
+    } catch (error: unknown) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException(
+          'El email u otro campo único ya está registrado',
+        );
+      }
+      throw error;
+    }
+
+    return this.findByDocumento(documento);
+  }
+
   private async resolveTipoUsuario(userId: string): Promise<TipoUsuario> {
-    const [conductor] = await this.drizzleService.db
+    return this.resolveTipoUsuarioWithDb(this.drizzleService.db, userId);
+  }
+
+  private async resolveTipoUsuarioWithDb(
+    db: typeof this.drizzleService.db,
+    userId: string,
+  ): Promise<TipoUsuario> {
+    const [conductor] = await db
       .select({ id: conductores.id })
       .from(conductores)
       .where(eq(conductores.id, userId));
@@ -165,7 +343,7 @@ export class UsersRepository {
       return 'conductor';
     }
 
-    const [controlador] = await this.drizzleService.db
+    const [controlador] = await db
       .select({ id: controladores.id })
       .from(controladores)
       .where(eq(controladores.id, userId));
