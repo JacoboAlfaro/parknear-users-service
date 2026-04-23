@@ -1,19 +1,17 @@
+import { EstadoUsuario } from 'src/database/schema';
+
 export class User {
-  documento_identidad?: string;
-  primer_nombre?: string;
+  id!: string;
+  documento_identidad!: string;
+  primer_nombre!: string;
   segundo_nombre?: string;
-  primer_apellido?: string;
+  primer_apellido!: string;
   segundo_apellido?: string;
-  rol?: string;
-  correo?: string;
-  celular?: string;
-  estado?: string;
-
-  vehiculos?: Vehiculo[];
-}
-
-export class Vehiculo {
-  placa?: string;
-  color?: string;
-  marca?: string;
+  email!: string;
+  contrasena!: string;
+  celular!: string;
+  estado!: EstadoUsuario;
+  tipo_usuario!: 'conductor' | 'controlador' | null;
+  fecha_creacion!: Date;
+  fecha_actualizacion!: Date;
 }

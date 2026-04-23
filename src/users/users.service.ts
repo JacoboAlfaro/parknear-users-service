@@ -1,67 +1,157 @@
-import { Injectable } from '@nestjs/common';
-import { User } from './entities/user.entity';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { hash } from 'bcryptjs';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AddVehiculoDto } from './dto/add-vehiculo.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import {
+  UpdateUsuarioFields,
+  UserRecord,
+  UsersRepository,
+} from './repositories/users.repository';
 
 @Injectable()
 export class UsersService {
-  private users: User[] = [];
+  constructor(private readonly usersRepository: UsersRepository) {}
 
-  create(createUserDto: CreateUserDto) {
-    const exists = this.users.find(
-      user => user.correo === createUserDto.correo
-    );
+  async create(createUserDto: CreateUserDto) {
+    this.validateRequiredFields(createUserDto);
+    const hashedPassword = await hash(createUserDto.contrasena, 10);
 
-    if (exists) {
-      throw new Error('El usuario ya existe');
+    try {
+      const user = await this.usersRepository.create({
+        ...createUserDto,
+        contrasena: hashedPassword,
+      });
+
+      return this.sanitizeUser(user);
+    } catch (error: unknown) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('Error al crear usuario');
     }
-
-    this.users.push(createUserDto);
-    return createUserDto;
   }
 
-  findAll() {
-    return this.users;
+  async findAll() {
+    const users = await this.usersRepository.findAll();
+    return users.map((user) => this.sanitizeUser(user));
   }
 
-  findByCorreo(correo: string) {
-    const user = this.users.find(
-      user =>
-        user.correo?.trim().toLowerCase() ===
-        correo.trim().toLowerCase()
-    );
-
-    return user || null;
-  }
-
-  addVehiculo(documento: string, vehiculoDto: any) {
-    const user = this.users.find(
-      u => u.documento_identidad === documento
-    );
+  async findByEmail(email: string) {
+    const user = await this.usersRepository.findByEmail(email);
 
     if (!user) {
-      throw new Error('Usuario no encontrado');
+      throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (!user.vehiculos) {
-      user.vehiculos = [];
+    return this.sanitizeUser(user);
+  }
+
+  async addVehiculo(documento: string, vehiculoDto: AddVehiculoDto) {
+    const user = await this.usersRepository.findByDocumento(documento);
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
     }
 
-    user.vehiculos.push(vehiculoDto);
+    if (user.tipo_usuario !== 'conductor') {
+      throw new BadRequestException(
+        'Solo los conductores pueden registrar vehículos',
+      );
+    }
 
-    return user;
+    await this.usersRepository.insertVehiculoForConductor(user.id, {
+      placa: vehiculoDto.placa,
+      marca: vehiculoDto.marca,
+      color: vehiculoDto.color,
+    });
+
+    const vehiculos =
+      await this.usersRepository.findVehiculosByConductorId(user.id);
+
+    return {
+      ...this.sanitizeUser(user),
+      vehiculos,
+    };
   }
 
-  update(documento: string, updateDto: any) {
-  const user = this.users.find(
-    u => u.documento_identidad === documento
-  );
+  async update(documento: string, updateDto: UpdateUserDto) {
+    const existing = await this.usersRepository.findByDocumento(documento);
 
-  if (!user) {
-    throw new Error('Usuario no encontrado');
+    if (!existing) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const fields = await this.buildUpdateFields(updateDto);
+
+    const updated = await this.usersRepository.updateByDocumento(
+      documento,
+      fields,
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    return this.sanitizeUser(updated);
   }
 
-  Object.assign(user, updateDto);
+  private async buildUpdateFields(
+    updateDto: UpdateUserDto,
+  ): Promise<UpdateUsuarioFields> {
+    const { contrasena, ...rest } = updateDto;
+    const fields: UpdateUsuarioFields = { ...rest };
 
-  return user;
-}
+    if (typeof contrasena === 'string' && contrasena.trim().length > 0) {
+      fields.contrasena = await hash(contrasena, 10);
+    }
+
+    return fields;
+  }
+
+  private sanitizeUser(user: UserRecord) {
+    return {
+      id: user.id,
+      documento_identidad: user.documento_identidad,
+      primer_nombre: user.primer_nombre,
+      segundo_nombre: user.segundo_nombre,
+      primer_apellido: user.primer_apellido,
+      segundo_apellido: user.segundo_apellido,
+      email: user.email,
+      celular: user.celular,
+      estado: user.estado,
+      tipo_usuario: user.tipo_usuario,
+      fecha_creacion: user.fecha_creacion,
+      fecha_actualizacion: user.fecha_actualizacion,
+    };
+  }
+
+  private validateRequiredFields(createUserDto: CreateUserDto) {
+    const requiredFields: Array<keyof CreateUserDto> = [
+      'documento_identidad',
+      'primer_nombre',
+      'primer_apellido',
+      'email',
+      'contrasena',
+      'celular',
+    ];
+
+    const missingFields = requiredFields.filter((field) => {
+      const value = createUserDto[field];
+      return typeof value !== 'string' || value.trim().length === 0;
+    });
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `Faltan campos requeridos: ${missingFields.join(', ')}`,
+      );
+    }
+  }
 }
