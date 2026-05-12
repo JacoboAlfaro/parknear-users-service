@@ -14,21 +14,29 @@ export class UsersController {
     return this.usersService.create(createUserDto);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   @Get()
   async findAll() {
     return this.usersService.findAll();
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   @Get(':email')
   async findByEmail(@Param('email') email: string) {
     return this.usersService.findByEmail(email);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'CONDUCTOR')
   @Post(':documento/vehiculo')
   addVehiculo(@Param('documento') documento: string, @Body() vehiculoDto: any) {
     return this.usersService.addVehiculo(documento, vehiculoDto);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   @Patch(':documento') update(@Param('documento') documento: string,@Body() updateDto: any) {
     return this.usersService.update(documento, updateDto);
   }
