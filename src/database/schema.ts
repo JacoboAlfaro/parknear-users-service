@@ -53,3 +53,10 @@ export const controladores = pgTable('controladores', {
     .references(() => usuarios.id, { onDelete: 'restrict', onUpdate: 'cascade' }),
   estado: estadoUsuarioEnum('estado'),
 });
+
+export const admin = pgTable('admin', {
+  id: uuid('id')
+    .primaryKey()
+    .references(() => usuarios.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  estado: estadoUsuarioEnum('estado').notNull().default('activo'),
+});

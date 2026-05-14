@@ -3,13 +3,14 @@ import { eq } from 'drizzle-orm';
 import { DrizzleService } from 'src/database/drizzle.service';
 import {
   EstadoUsuario,
+  admin,
   conductores,
   controladores,
   usuarios,
   vehiculos,
 } from 'src/database/schema';
 
-export type TipoUsuario = 'conductor' | 'controlador' | null;
+export type TipoUsuario = 'conductor' | 'controlador' | 'admin' | null;
 
 export interface UserRecord {
   id: string;
@@ -56,7 +57,7 @@ export interface UpdateUsuarioFields {
   contrasena?: string;
   celular?: string;
   estado?: EstadoUsuario;
-  tipo_usuario?: 'conductor' | 'controlador';
+  tipo_usuario?: 'conductor' | 'controlador' | 'admin';
 }
 
 @Injectable()
@@ -98,6 +99,13 @@ export class UsersRepository {
           await tx.insert(controladores).values({
             id: usuario.id,
             estado,
+          });
+        }
+
+        if (input.tipo_usuario === 'admin') {
+          await tx.insert(admin).values({
+            id: usuario.id,
+            estado: 'activo',
           });
         }
 
@@ -303,10 +311,15 @@ export class UsersRepository {
               id: fresh.id,
               estado: fresh.estado,
             });
-          } else {
+          } else if (tipo_usuario === 'controlador') {
             await tx.insert(controladores).values({
               id: fresh.id,
               estado: fresh.estado,
+            });
+          } else if (tipo_usuario === 'admin') {
+            await tx.insert(admin).values({
+              id: fresh.id,
+              estado: 'activo',
             });
           }
         }
@@ -350,6 +363,15 @@ export class UsersRepository {
 
     if (controlador) {
       return 'controlador';
+    }
+
+    const [adminUser] = await db
+      .select({ id: admin.id })
+      .from(admin)
+      .where(eq(admin.id, userId));
+
+    if (adminUser) {
+      return 'admin';
     }
 
     return null;
