@@ -82,6 +82,16 @@ export class UsersService {
     };
   }
 
+  async getVehiculos(documento: string) {
+    const user = await this.usersRepository.findByDocumento(documento);
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    return this.usersRepository.findVehiculosByConductorId(user.id);
+  }
+
   async update(documento: string, updateDto: UpdateUserDto) {
     const existing = await this.usersRepository.findByDocumento(documento);
 

@@ -36,6 +36,13 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'CONDUCTOR')
+  @Get(':documento/vehiculos')
+  getVehiculos(@Param('documento') documento: string) {
+    return this.usersService.getVehiculos(documento);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Patch(':documento') update(@Param('documento') documento: string,@Body() updateDto: any) {
     return this.usersService.update(documento, updateDto);
