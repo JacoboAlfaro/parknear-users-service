@@ -261,6 +261,68 @@ export class UsersRepository {
       .where(eq(vehiculos.id_conductor, conductorId));
   }
 
+  async updateVehiculo(
+    conductorId: string,
+    placa: string,
+    input: { placa?: string; marca?: string; color?: string },
+  ): Promise<VehiculoRecord | null> {
+    const values: Partial<typeof vehiculos.$inferInsert> = {};
+
+    if (input.marca) {
+      values.marca = input.marca.trim().slice(0, 32);
+    }
+    if (input.color) {
+      values.color = input.color.trim().slice(0, 32);
+    }
+
+    if (Object.keys(values).length === 0) {
+      const [existing] = await this.drizzleService.db
+        .select({
+          placa: vehiculos.placa,
+          id_conductor: vehiculos.id_conductor,
+          marca: vehiculos.marca,
+          color: vehiculos.color,
+        })
+        .from(vehiculos)
+        .where(eq(vehiculos.placa, placa));
+
+      return existing?.id_conductor === conductorId ? existing : null;
+    }
+
+    try {
+      const [updated] = await this.drizzleService.db
+        .update(vehiculos)
+        .set(values)
+        .where(eq(vehiculos.placa, placa))
+        .returning({
+          placa: vehiculos.placa,
+          id_conductor: vehiculos.id_conductor,
+          marca: vehiculos.marca,
+          color: vehiculos.color,
+        });
+
+      if (!updated || updated.id_conductor !== conductorId) {
+        return null;
+      }
+
+      return updated;
+    } catch (error: unknown) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException('Ya existe un vehículo con esa placa');
+      }
+      throw error;
+    }
+  }
+
+  async deleteVehiculo(conductorId: string, placa: string): Promise<boolean> {
+    const deleted = await this.drizzleService.db
+      .delete(vehiculos)
+      .where(eq(vehiculos.placa, placa))
+      .returning({ id_conductor: vehiculos.id_conductor });
+
+    return deleted[0]?.id_conductor === conductorId;
+  }
+
   async updateByDocumento(
     documento: string,
     fields: UpdateUsuarioFields,
