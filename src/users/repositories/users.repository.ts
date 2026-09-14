@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from 'src/database/drizzle.service';
 import {
   EstadoUsuario,
@@ -284,16 +284,26 @@ export class UsersRepository {
           color: vehiculos.color,
         })
         .from(vehiculos)
-        .where(eq(vehiculos.placa, placa));
+        .where(
+          and(
+            eq(vehiculos.placa, placa),
+            eq(vehiculos.id_conductor, conductorId),
+          ),
+        );
 
-      return existing?.id_conductor === conductorId ? existing : null;
+      return existing ?? null;
     }
 
     try {
       const [updated] = await this.drizzleService.db
         .update(vehiculos)
         .set(values)
-        .where(eq(vehiculos.placa, placa))
+        .where(
+          and(
+            eq(vehiculos.placa, placa),
+            eq(vehiculos.id_conductor, conductorId),
+          ),
+        )
         .returning({
           placa: vehiculos.placa,
           id_conductor: vehiculos.id_conductor,
@@ -301,11 +311,7 @@ export class UsersRepository {
           color: vehiculos.color,
         });
 
-      if (!updated || updated.id_conductor !== conductorId) {
-        return null;
-      }
-
-      return updated;
+      return updated ?? null;
     } catch (error: unknown) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('Ya existe un vehículo con esa placa');
@@ -317,7 +323,12 @@ export class UsersRepository {
   async deleteVehiculo(conductorId: string, placa: string): Promise<boolean> {
     const deleted = await this.drizzleService.db
       .delete(vehiculos)
-      .where(eq(vehiculos.placa, placa))
+      .where(
+        and(
+          eq(vehiculos.placa, placa),
+          eq(vehiculos.id_conductor, conductorId),
+        ),
+      )
       .returning({ id_conductor: vehiculos.id_conductor });
 
     return deleted[0]?.id_conductor === conductorId;
